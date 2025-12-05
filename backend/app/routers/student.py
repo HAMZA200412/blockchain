@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request, Depends
 from typing import List
-from app.models import AssignmentCreate, SubmissionCreate, TransactionResponse
+from app.models import SubmissionCreate, TransactionResponse
 from app.blockchain import Transaction
 
 router = APIRouter()
@@ -42,11 +42,18 @@ async def submit_assignment(
         # Vérifier que l'étudiant existe
         if submission.student_address not in blockchain.participants:
             raise HTTPException(status_code=404, detail="Student not found")
+        
+        # Vérifier si l'étudiant a déjà soumis ce devoir
+        if blockchain.has_student_submitted(submission.student_address, submission.assignment_id):
+            raise HTTPException(
+                status_code=400, 
+                detail="Vous avez déjà soumis ce devoir"
+            )
             
         # Créer la transaction de soumission
         tx_data = {
             "assignment_id": submission.assignment_id,
-            "content": submission.content,
+            "encrypted_content": submission.encrypted_content,  # Contenu déjà chiffré côté client
             "student_name": submission.student_name
         }
         
@@ -96,3 +103,22 @@ async def get_grades(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/announcements")
+async def get_announcements(
+    student_address: str = None,
+    blockchain=Depends(get_blockchain)
+):
+    """
+    Récupérer les annonces pour un étudiant
+    """
+    try:
+        announcements = blockchain.get_announcements(student_address)
+        return {
+            "success": True,
+            "count": len(announcements),
+            "announcements": announcements
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

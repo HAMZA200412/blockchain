@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookOpen, Award, FileText, User, Calendar, Send, CheckCircle } from 'lucide-react';
+import { BookOpen, Award, FileText, User, Calendar, Send, CheckCircle, Bell, Lock } from 'lucide-react';
 import LoadingSpinner from './LoadingSpinner';
+import AnnouncementCard from './AnnouncementCard';
+import { encryptWithPublicKey } from '../utils/crypto';
 
 const API_URL = 'http://localhost:8000/api';
 
 const StudentDashboard = ({ address, name, onLogout }) => {
     const [assignments, setAssignments] = useState([]);
     const [grades, setGrades] = useState([]);
+    const [announcements, setAnnouncements] = useState([]);
     const [activeTab, setActiveTab] = useState('assignments');
 
     useEffect(() => {
@@ -16,16 +19,19 @@ const StudentDashboard = ({ address, name, onLogout }) => {
 
     const fetchData = async () => {
         try {
-            const [assResponse, gradesResponse] = await Promise.all([
+            const [assResponse, gradesResponse, annResponse] = await Promise.all([
                 fetch(`${API_URL}/student/assignments?student_address=${address}`),
                 fetch(`${API_URL}/student/grades/${address}`),
+                fetch(`${API_URL}/student/announcements?student_address=${address}`),
             ]);
 
             const assData = await assResponse.json();
             const gradesData = await gradesResponse.json();
+            const annData = await annResponse.json();
 
             if (assData.success) setAssignments(assData.assignments);
             if (gradesData.success) setGrades(gradesData.grades);
+            if (annData.success) setAnnouncements(annData.announcements);
         } catch (error) {
             console.error('Error fetching data:', error);
         }
@@ -70,6 +76,12 @@ const StudentDashboard = ({ address, name, onLogout }) => {
                         onClick={() => setActiveTab('grades')}
                         icon={<Award className="w-5 h-5" />}
                         label="Mes Notes"
+                    />
+                    <TabButton
+                        active={activeTab === 'announcements'}
+                        onClick={() => setActiveTab('announcements')}
+                        icon={<Bell className="w-5 h-5" />}
+                        label="Annonces"
                     />
                 </div>
             </div>
@@ -121,6 +133,30 @@ const StudentDashboard = ({ address, name, onLogout }) => {
                                         <GradeCard key={grade.transaction_id} grade={grade} index={index} />
                                     ))}
                                 </div>
+                            )}\n                        </motion.div>
+                    )}
+
+                    {activeTab === 'announcements' && (
+                        <motion.div
+                            key="announcements"
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: 20 }}
+                            className="space-y-6"
+                        >
+                            <h3 className="text-2xl font-bold text-gray-800 mb-6">Annonces des Enseignants</h3>
+                            {announcements.length === 0 ? (
+                                <EmptyState icon={<Bell />} message="Aucune annonce pour le moment." />
+                            ) : (
+                                <div className="space-y-4">
+                                    {announcements.map((announcement, index) => (
+                                        <AnnouncementCard
+                                            key={announcement.transaction_id}
+                                            announcement={announcement}
+                                            index={index}
+                                        />
+                                    ))}
+                                </div>
                             )}
                         </motion.div>
                     )}
@@ -151,20 +187,61 @@ const StudentAssignmentCard = ({ assignment, studentAddress, studentName, index 
     const [content, setContent] = useState('');
     const [submitted, setSubmitted] = useState(false);
 
+    // Vérifier au montage si l'étudiant a déjà soumis ce devoir
+    useEffect(() => {
+        const checkSubmission = async () => {
+            try {
+                const response = await fetch(`${API_URL}/teacher/submissions/${assignment.transaction_id}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    // Vérifier si une soumission existe pour cet étudiant
+                    const alreadySubmitted = data.submissions?.some(
+                        sub => sub.sender === studentAddress
+                    );
+                    if (alreadySubmitted) {
+                        setSubmitted(true);
+                    }
+                }
+            } catch (error) {
+                console.error('Error checking submission:', error);
+            }
+        };
+        checkSubmission();
+    }, [assignment.transaction_id, studentAddress]);
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setSubmitting(true);
         try {
+            // Get the teacher's public encryption key from the assignment
+            const publicKey = assignment.data.encryption_public_key;
+
+            if (!publicKey) {
+                alert('Erreur : Clé de chiffrement introuvable pour ce devoir');
+                setSubmitting(false);
+                return;
+            }
+
+            // Encrypt the submission content
+            const encryptedContent = encryptWithPublicKey(content, publicKey);
+
+            if (!encryptedContent) {
+                alert('Erreur lors du chiffrement de la réponse');
+                setSubmitting(false);
+                return;
+            }
+
             const response = await fetch(`${API_URL}/student/submit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     assignment_id: assignment.transaction_id,
                     student_address: studentAddress,
-                    content: content,
+                    encrypted_content: encryptedContent,  // Send encrypted content
                     student_name: studentName,
                 }),
             });
+
             if (response.ok) {
                 // Mine the transaction immediately
                 await fetch(`${API_URL}/blockchain/mine`, {
@@ -173,9 +250,18 @@ const StudentAssignmentCard = ({ assignment, studentAddress, studentName, index 
                     body: JSON.stringify({ miner_address: studentAddress }),
                 });
                 setSubmitted(true);
+            } else {
+                // Gérer les erreurs spécifiques
+                const errorData = await response.json();
+                if (response.status === 400 && errorData.detail === "Vous avez déjà soumis ce devoir") {
+                    alert('❌ Vous avez déjà soumis ce devoir. Une seule soumission par devoir est autorisée.');
+                } else {
+                    alert(`Erreur: ${errorData.detail || 'Erreur lors de la soumission'}`);
+                }
             }
         } catch (error) {
             console.error(error);
+            alert('Erreur réseau lors de la soumission');
         } finally {
             setSubmitting(false);
         }
@@ -201,6 +287,10 @@ const StudentAssignmentCard = ({ assignment, studentAddress, studentName, index 
                     <Calendar className="w-4 h-4" />
                     À rendre avant le : {assignment.data.due_date}
                 </p>
+                <div className="flex items-center gap-2 text-green-600 text-sm font-semibold bg-green-50 px-3 py-2 rounded-full mb-3 w-fit">
+                    <Lock className="w-4 h-4" />
+                    <span>Soumission chiffrée - Votre réponse sera protégée</span>
+                </div>
                 <p className="text-gray-700 leading-relaxed bg-gray-50 p-4 rounded-xl">
                     {assignment.data.description}
                 </p>

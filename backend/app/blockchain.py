@@ -235,6 +235,16 @@ class Blockchain:
         
         return submissions
     
+    def get_submission_by_id(self, submission_id: str) -> Optional[Dict]:
+        """Récupère une soumission spécifique par son transaction_id"""
+        for block in self.chain[1:]:
+            for tx in block.transactions:
+                if tx["type"] == "SUBMISSION" and tx["transaction_id"] == submission_id:
+                    submission = tx.copy()
+                    submission["block_index"] = block.index
+                    return submission
+        return None
+    
     def get_grades(self, student_address: str) -> List[Dict]:
         """Récupère les notes d'un étudiant"""
         grades = []
@@ -247,6 +257,43 @@ class Blockchain:
                     grades.append(grade)
         
         return grades
+    
+    def get_announcements(self, student_address: Optional[str] = None) -> List[Dict]:
+        """Récupère les annonces pour un étudiant ou toutes les annonces"""
+        announcements = []
+        
+        for block in self.chain[1:]:
+            for tx in block.transactions:
+                if tx["type"] == "ANNOUNCEMENT":
+                    # Si student_address est None, retourner toutes les annonces
+                    # Sinon, filtrer par destinataire (ALL ou l'adresse spécifique)
+                    if student_address is None or tx["receiver"] == "ALL" or tx["receiver"] == student_address:
+                        announcement = tx.copy()
+                        announcement["block_index"] = block.index
+                        announcements.append(announcement)
+        
+        return announcements
+    
+    def has_student_submitted(self, student_address: str, assignment_id: str) -> bool:
+        """Vérifie si un étudiant a déjà soumis un devoir spécifique"""
+        for block in self.chain[1:]:
+            for tx in block.transactions:
+                if (tx["type"] == "SUBMISSION" and 
+                    tx["sender"] == student_address and 
+                    tx["data"].get("assignment_id") == assignment_id):
+                    return True
+        return False
+    
+    def has_teacher_graded(self, teacher_address: str, student_address: str, assignment_id: str) -> bool:
+        """Vérifie si un enseignant a déjà noté un étudiant pour un devoir spécifique"""
+        for block in self.chain[1:]:
+            for tx in block.transactions:
+                if (tx["type"] == "GRADE" and 
+                    tx["sender"] == teacher_address and 
+                    tx["receiver"] == student_address and
+                    tx["data"].get("assignment_id") == assignment_id):
+                    return True
+        return False
     
     def get_chain_info(self) -> Dict:
         """Retourne les informations sur la blockchain"""

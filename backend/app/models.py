@@ -41,11 +41,12 @@ class AssignmentCreate(BaseModel):
     description: str
     due_date: str
     teacher_address: str
+    encryption_public_key: Optional[str] = None  # Clé publique RSA pour chiffrer les soumissions
 
 class SubmissionCreate(BaseModel):
     assignment_id: str
     student_address: str
-    content: str  # URL or text content
+    encrypted_content: str  # Contenu chiffré avec la clé publique de l'enseignant
     student_name: str
 
 class GradeCreate(BaseModel):
@@ -54,3 +55,19 @@ class GradeCreate(BaseModel):
     grade: float
     comment: str
     teacher_address: str
+
+class AnnouncementCreate(BaseModel):
+    title: str
+    message: str
+    teacher_address: str
+    target_students: Optional[List[str]] = None  # None = tous les étudiants
+
+class EncryptionKeyPair(BaseModel):
+    public_key: str
+    private_key: str  # À ne partager qu'avec l'enseignant
+    address: str
+
+class DecryptRequest(BaseModel):
+    encrypted_content: str
+    teacher_address: str
+

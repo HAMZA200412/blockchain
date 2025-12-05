@@ -10,6 +10,7 @@ import StatCard from './components/StatCard';
 import LoadingSpinner from './components/LoadingSpinner';
 import TeacherDashboard from './components/TeacherDashboard';
 import StudentDashboard from './components/StudentDashboard';
+import PublicKeyDisplay from './components/PublicKeyDisplay';
 
 const API_URL = 'http://localhost:8000/api';
 
@@ -230,9 +231,7 @@ function RegisterForm({ onSuccess, onCancel }) {
 
       if (response.ok) {
         setWallet(data);
-        setTimeout(() => {
-          onSuccess(data.address, data.role, data.name);
-        }, 3000);
+        // Don't call onSuccess here - let PublicKeyDisplay handle it after 15 seconds
       } else {
         setError(data.detail || 'Erreur lors de l\'inscription');
       }
@@ -245,70 +244,12 @@ function RegisterForm({ onSuccess, onCancel }) {
 
   if (wallet) {
     return (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="max-w-2xl mx-auto bg-white p-8 rounded-2xl shadow-2xl"
-      >
-        <div className="text-center mb-6">
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: "spring", duration: 0.6 }}
-          >
-            <CheckCircle className="w-20 h-20 text-green-500 mx-auto mb-4" />
-          </motion.div>
-          <h2 className="text-3xl font-bold text-gray-800">
-            Inscription Réussie!
-          </h2>
-        </div>
-
-        <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-200 p-6 rounded-xl mb-6">
-          <p className="text-sm font-bold mb-2 text-yellow-900 flex items-center gap-2">
-            ⚠️ Informations importantes
-          </p>
-          <p className="text-xs text-yellow-800">
-            Conservez précieusement votre adresse pour vous reconnecter.
-          </p>
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Adresse (ID de connexion)
-            </label>
-            <input
-              type="text"
-              value={wallet.address}
-              readOnly
-              className="w-full p-3 border-2 border-gray-200 rounded-xl bg-gray-50 font-mono text-sm focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Rôle
-            </label>
-            <input
-              type="text"
-              value={wallet.role}
-              readOnly
-              className="w-full p-3 border-2 border-gray-200 rounded-xl bg-gray-50 font-semibold"
-            />
-          </div>
-        </div>
-
-        <motion.div
-          className="mt-6 text-center"
-          animate={{ opacity: [0.5, 1, 0.5] }}
-          transition={{ duration: 2, repeat: Infinity }}
-        >
-          <LoadingSpinner size="sm" />
-          <p className="text-sm text-gray-600 mt-2">
-            Redirection automatique...
-          </p>
-        </motion.div>
-      </motion.div>
+      <PublicKeyDisplay
+        address={wallet.address}
+        publicKey={wallet.public_key}
+        role={wallet.role}
+        onComplete={() => onSuccess(wallet.address, wallet.role, wallet.name)}
+      />
     );
   }
 
@@ -403,6 +344,7 @@ function LoginForm({ onSuccess, onCancel }) {
   const [address, setAddress] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [participant, setParticipant] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -414,8 +356,8 @@ function LoginForm({ onSuccess, onCancel }) {
       const data = await response.json();
 
       if (response.ok && data.success) {
-        const participant = data.participant;
-        onSuccess(participant.address, participant.role, participant.name);
+        setParticipant(data.participant);
+        // Don't call onSuccess immediately - show Address ID first
       } else {
         setError('Utilisateur non trouvé');
       }
@@ -425,6 +367,18 @@ function LoginForm({ onSuccess, onCancel }) {
       setLoading(false);
     }
   };
+
+  // Show Address ID display after successful login
+  if (participant) {
+    return (
+      <PublicKeyDisplay
+        address={participant.address}
+        publicKey={participant.public_key}
+        role={participant.role}
+        onComplete={() => onSuccess(participant.address, participant.role, participant.name)}
+      />
+    );
+  }
 
   return (
     <motion.div
